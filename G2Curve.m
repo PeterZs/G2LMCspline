@@ -1,110 +1,141 @@
-interactiveG2Curve();
-% load("examples\can.mat");
-% interactiveG2Curve(p{1},a{1});
-function interactiveG2Curve(p,a)
-    % Create figure window and axes
-    hFig = figure('Name', 'G2_interactive',...
-                 'NumberTitle', 'off',...
-                 'KeyPressFcn', @keyCallback);
-    ax = axes('Parent', hFig);
-    hold(ax, 'on');
-    axis(ax, 'equal');
-    axis(ax, 'off');
-    xlim manual;ylim manual;
-
-    % Initialize interactive polygon
-    hPoly = drawpolygon(ax, 'Tag', 'G2Polygon',...
-                        'FaceAlpha', 0.1,...
-                        'EdgeAlpha', 0.5);
-    title(ax, {'G2 curve','press W : curvature parameter \times 10 ', 'press R : curvature parameter \times 0.1'});
-    
-    % Initialize curvature parameters (stored in polygon object)
-    hPoly.UserData.k = ones(size(hPoly.Position,1),1);
-
-    if nargin == 1
-        hPoly.Position = p;
-        hPoly.UserData.k = ones(length(p),1);
+classdef G2Curve
+    properties
+        controlPoints           %controlpoints
+        pointnum                %controlpoint number
+        curvaturePar            %curvature parameter
+        curvePar                %0:0.01:1
+        kappa                   %directed curvature
+        isClose                 
+        kappaLength             %curvature scaling parameter(for drawing)
+        isFlat                  
+        curve                   
+        curvature               
+        FPoints                 
+        normal                  
+        tangent                 
+        maxdistance             
+        blendParameter
+        weight                  
+        interpPar               
     end
-    if nargin == 2
-        hPoly.Position = p;
-        hPoly.UserData.k = a;
-    end
-    % Plot initial curve
-    t = 0:0.01:1;
-    q = G2(hPoly.Position, t, hPoly.UserData.k, 'close', 0.83);
-    hCurve = plot(ax, real(q), imag(q),...
-                 'LineWidth', 3,...
-                 'Color', [0 0.5 0],...
-                 'Tag', 'G2Curve');
     
-    % Bind polygon update event
-    addlistener(hPoly, 'MovingROI', @(src,evt) updateOnDrag(ax, src, hCurve));
+    methods
+        function obj = G2Curve(p, a, u, isClose, w)
+            if nargin < 1
+                p = [0.5 0; 1 0.5; 0.5 1; 0 0.5];
+            end
+            if nargin < 2
+                a = ones(length(p), 1);
+            end
+            if length(a) < numel(p(:,1))
+                a = [a;ones(numel(p(:,1))-length(a),1)];
+            end
+            if length(a) > numel(p(:,1))
+                a = a(1:numel(p(:,1)),1);
+            end
+            if nargin < 3
+                u = 0:0.01:1;
+            end
+            if nargin < 4
+                isClose = 'close';
+            end
+            if nargin < 5
+                w = 0.83;
+            end
+
+            obj.controlPoints = p;
+            if numel(obj.controlPoints(1,:)) == 2
+                obj.controlPoints = obj.controlPoints*[1;1i];
+            end
+            obj.curvaturePar = a;
+            obj.curvePar = u;
+            obj.isClose = isClose;
+            obj.weight = w;
+
+            [obj.curve,obj.kappa,obj.FPoints,obj.maxdistance,obj.normal,obj.tangent,obj.blendParameter,obj.interpPar] = G2(p, u, a, isClose, w);
+            obj.curvature = abs(obj.kappa);
+            obj.pointnum = length(obj.controlPoints);
+            if strcmp(obj.isClose,'unclose')
+                obj.pointnum = obj.pointnum-2;
+            end
+        end 
+
+        function drawCurve(obj,Color,LineWidth)
+            if nargin < 3
+                LineWidth = 2;
+            end
+            if nargin < 2
+                Color = 'b';
+            end
+            plot(real(obj.curve),imag(obj.curve),"LineWidth",LineWidth,"Color",Color);
+            hold on
+        end
+        function drawCurvatureCurve(obj,kappalength,track,LineWidth,Color)
+            if nargin < 2
+                kappalength = 0.3*max(abs(obj.controlPoints-obj.controlPoints([2:length(obj.controlPoints),1])));
+            end
+            if nargin < 3
+                track = 'on';
+            end
+            if nargin < 4
+                LineWidth = 1.2;
+            end
+            if nargin < 5
+                Color = 'm';
+            end
+            curvaturecurve = obj.curve - kappalength*log10(1+obj.curvature).*obj.kappa./obj.curvature;
+            plot(real(curvaturecurve),imag(curvaturecurve),"LineWidth",LineWidth,"Color",Color);
+            if strcmp(track,'on')
+                d = floor((length(obj.curvePar)-1)/20);
+                hold on
+                line([real(obj.curve(1:d:end));real(curvaturecurve(1:d:end))],[imag(obj.curve(1:d:end));imag(curvaturecurve(1:d:end))],'Color','g','LineWidth',0.5);
+            end
+            hold on
+        end
+
+        function showControlPoints(obj,Color,isFill,ghostpoints,size)
+            if nargin < 2
+                Color = 'r';
+            end
+            if nargin < 3
+                isFill = 'unfill';
+            end
+            if nargin < 4
+                ghostpoints = 'off';
+            end
+            if nargin < 5
+                size = [];
+            end
+            C = obj.controlPoints;
+            if strcmp(obj.isClose, 'unclose')
+                C = C(2:end-1,:);
+                if strcmp(ghostpoints, 'on')
+                    scatter(real(obj.controlPoints),imag(obj.controlPoints),[],'g');
+                end
+            end
+
+            if strcmp(isFill,'filled')
+                scatter(real(C),imag(C),size,Color,'filled');
+            else
+                scatter(real(C),imag(C),size,Color);
+            end
+        end
+        function showFPoints(obj,Color)
+            if nargin < 2
+                Color = 'm';
+            end
+            F = obj.FPoints;
+            if strcmp(obj.isClose,'unclose')
+                F = F(2:end-1,:);
+            end
+            scatter(real(F(:,1)),imag(F(:,1)),Color,'filled');
+            hold on
+            scatter(real(F(:,3)),imag(F(:,3)),Color,'filled');
+        end
+
+    end
 end
-
-function updateOnDrag(ax, poly, curve)
-    % Synchronize parameter dimensions
-    if numel(poly.UserData.k) ~= size(poly.Position,1)
-        poly.UserData.k = ones(size(poly.Position,1),1);
-    end
-    
-    % Update curve
-    t = 0:0.01:1;
-    q = G2(poly.Position, t, poly.UserData.k, 'close', 0.83);
-    set(curve, 'XData', real(q), 'YData', imag(q));
-    drawnow limitrate;
-end
-
-function keyCallback(src, event)
-    % Get key object handles
-    hFig = ancestor(src, 'figure');
-    ax = findobj(hFig, 'Type', 'axes');
-    hPoly = findobj(hFig, 'Tag', 'G2Polygon');
-    hCurve = findobj(hFig, 'Tag', 'G2Curve');
-    
-    % Validity check
-    if isempty(hPoly) || ~isvalid(hPoly) || isempty(hCurve)
-        return;
-    end
-    
-    % Get mouse position (data coordinate system)
-    mousePos = get(ax, 'CurrentPoint');
-    mousePos = mousePos(1,1:2);
-    
-    % Find nearest control point
-    [idx, dist] = findNearestPoint(hPoly.Position, mousePos);
-    if isempty(idx) || dist > 0.1
-        return;
-    end
-    
-    % Modify curvature parameters
-    k = hPoly.UserData.k;
-    switch event.Key
-        case 'w'
-            k(idx) = k(idx) * 10;
-        case 'r'
-            k(idx) = k(idx) * 0.1;
-    end
-    hPoly.UserData.k = k;
-    
-    % Update curve immediately
-    t = 0:0.01:1;
-    q = G2(hPoly.Position, t, k, 'close', 0.83);
-    set(hCurve, 'XData', real(q), 'YData', imag(q));
-    drawnow;
-
-end
-
-function [idx, minDist] = findNearestPoint(points, target)
-    % Nearest point search with threshold
-    deltas = points - target;
-    distances = sqrt(sum(deltas.^2, 2));
-    [minDist, idx] = min(distances);
-    if minDist > 0.1
-        idx = [];
-    end
-end
-
-function [q,kappa,c,d,n,t,blend] = G2(p, u, alpha, isClose, w, h)
+function [q,kappa,c,d,n,t,blend,s] = G2(p, u, alpha, isClose, w, h)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Function for calculating G2-LMC curve
@@ -310,5 +341,3 @@ dft = (F(t+d/2)-F(t-d/2)) / d;
 dftt = (F(t+d)-2*F(t)+F(t-d)) / d^2;
 kappa = imag(conj(dft).*dftt)./abs(dft).^4.*dft*1i;
 end
-
-
