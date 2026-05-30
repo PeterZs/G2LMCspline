@@ -1,22 +1,21 @@
 classdef G2Curve
     properties
-        controlPoints           %controlpoints
-        pointnum                %controlpoint number
-        curvaturePar            %curvature parameter
-        curvePar                %0:0.01:1
-        kappa                   %directed curvature
-        isClose                 
-        kappaLength             %curvature scaling parameter(for drawing)
-        isFlat                  
-        curve                   
-        curvature               
-        FPoints                 
-        normal                  
-        tangent                 
-        maxdistance             
+        controlPoints           % control points, given
+        curvaturePar            % curvature parameters, given
+        curvePar                % curve parameters, given
+        kappa                   % signed curvature
+        isClose                 % whether closed curve, given
+        kappaLength             % curvature length, given, for plotting
+        isFlat                  % whether flat point
+        curve                   % curve
+        curvature               % curvature
+        %curvatureCurve          % curvature line
+        FPoints                 % F points
+        normal                  % normal direction
+        tangent                 % tangent direction
+        maxdistance             % maximum distance per segment
         blendParameter
-        weight                  
-        interpPar               
+        weight                  % weight parameter
     end
     
     methods
@@ -52,12 +51,8 @@ classdef G2Curve
             obj.isClose = isClose;
             obj.weight = w;
 
-            [obj.curve,obj.kappa,obj.FPoints,obj.maxdistance,obj.normal,obj.tangent,obj.blendParameter,obj.interpPar] = G2(p, u, a, isClose, w);
+            [obj.curve,obj.kappa,obj.FPoints,obj.maxdistance,obj.normal,obj.tangent,obj.blendParameter] = G2(p, u, a, isClose, w);
             obj.curvature = abs(obj.kappa);
-            obj.pointnum = length(obj.controlPoints);
-            if strcmp(obj.isClose,'unclose')
-                obj.pointnum = obj.pointnum-2;
-            end
         end 
 
         function drawCurve(obj,Color,LineWidth)
@@ -70,6 +65,7 @@ classdef G2Curve
             plot(real(obj.curve),imag(obj.curve),"LineWidth",LineWidth,"Color",Color);
             hold on
         end
+
         function drawCurvatureCurve(obj,kappalength,track,LineWidth,Color)
             if nargin < 2
                 kappalength = 0.3*max(abs(obj.controlPoints-obj.controlPoints([2:length(obj.controlPoints),1])));
@@ -120,6 +116,59 @@ classdef G2Curve
                 scatter(real(C),imag(C),size,Color);
             end
         end
+        
+        function showColorControlPoints(obj,isFill,ghostpoints,size)
+            pink = [0.99,0.5,0.8];          % 100     [50 , inf)
+            dawn = [0.99,0.1,0];            % 10      [5 , 50)
+            pinkblack = [0.2,0.1,0.49];     % 1       [0.5 , 5)
+            pbl = [0,0.3,0.99];             % 0.1     [0.05 , 0.5)
+            skyblue = [0.3,0.8,0.99];       % 0.01    (inf , 0.05)
+
+            if nargin < 2
+                isFill = 'unfill';
+            end
+            if nargin < 3
+                ghostpoints = 'off';
+            end
+            if nargin < 4
+                size = [];
+            end
+            if strcmp(obj.isClose, 'unclose')
+                p = obj.controlPoints(2:end-1);
+                a = obj.curvaturePar(2:end-1);
+                if strcmp(ghostpoints, 'on')
+                    I = [1,length(obj.controlPoints)];
+                    scatter(real(obj.controlPoints(I)),imag(obj.controlPoints(I)),[],'g');
+                end 
+            else
+                p = obj.controlPoints;
+                a = obj.curvaturePar;
+            end
+            if strcmp(isFill,'filled')
+                I = find(a>=50);
+                scatter(real(p(I)),imag(p(I)),[],pink,'filled');
+                I = intersect(find(a>=5),find(a<50));
+                scatter(real(p(I)),imag(p(I)),[],dawn,'filled');
+                I = intersect(find(a>=0.5),find(a<5));
+                scatter(real(p(I)),imag(p(I)),[],pinkblack,'filled');
+                I = intersect(find(a>=0.05),find(a<0.5));
+                scatter(real(p(I)),imag(p(I)),[],pbl,'filled');
+                I = find(a<0.05);
+                scatter(real(p(I)),imag(p(I)),[],skyblue,'filled');           
+            else
+                I = find(a>=50);
+                scatter(real(p(I)),imag(p(I)),size,pink);
+                I = intersect(find(a>=5),find(a<50));
+                scatter(real(p(I)),imag(p(I)),size,dawn);
+                I = intersect(find(a>=0.5),find(a<5));
+                scatter(real(p(I)),imag(p(I)),size,pinkblack);
+                I = intersect(find(a>=0.05),find(a<0.5));
+                scatter(real(p(I)),imag(p(I)),size,pbl);
+                I = find(a<0.05);
+                scatter(real(p(I)),imag(p(I)),size,skyblue);            
+            end
+        end
+
         function showFPoints(obj,Color)
             if nargin < 2
                 Color = 'm';
@@ -135,15 +184,15 @@ classdef G2Curve
 
     end
 end
-function [q,kappa,c,d,n,t,blend,s] = G2(p, u, alpha, isClose, w, h)
+function [q,kappa,c,d,n,t,blend] = G2(p, u, alpha, isClose, w)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Function for calculating G2-LMC curve
-% p: control points, u: parameter, h: curve handle for callback
-% varargin contains options: 1. closed curve or not 2. curvature parameter of interpolation function
-% p will be converted to complex numbers for calculation
+% Function to compute G2 LMC curve.
+% p: control points, u: parameter, h: generated curve for callback.
+% varargin includes options: 1. whether closed curve 2. curvature parameters of interpolation function
+% p is converted to complex numbers for computation.
 
-% Initialize curve points q and curvature kappa, used to get F control points c of interpolation function
+% Initialize curve points q and curvature kappa, used to obtain F points c of interpolation function
 kappa = [];
 c = [];
 d = [];
@@ -174,11 +223,11 @@ c0(id_2) = 1./alpha(id_2).*p(id)+(1-1./alpha(id_2)).*p(id_2);
 a(id) = 0.5;
 b(id) = 0.5;
 blend = [a,b];
-% According to the option value, choose to draw closed or open curve
+% Choose to draw closed or open curve based on option value
 if strcmp(isClose, 'close')
     for i = 1:length(p)
         F1 = QuadraticBezier(c0(i),c1(i),c2(i));
-        j = mod(i,length(p))+1; % Next point after i
+        j = mod(i,length(p))+1; % next point after i
         F2 = QuadraticBezier(c0(j),c1(j),c2(j));
         [xx,yy] = Bezierblend(a(i),b(j));
         C = @(t)F1(s(i)+(1-s(i)).*xx(t)).*yy(t) + F2(s(j).*xx(t)).*(1-yy(t));
@@ -201,22 +250,22 @@ elseif strcmp(isClose, 'unclose')
 else
     error('Unknown style option');
 end
-if(nargin > 5)
-    set(h, 'xdata', real(q), 'ydata',imag(q));
-end
+%if(nargin > 2+length(varargin))
+    %set(h, 'xdata', real(q), 'ydata',imag(q));
+%end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Embedded functions
-% Bezierblend(a,b): gets blending function with parameters a,b
-% solveQuadpoly(a,b,c): returns the larger positive root of upward-opening quadratic function
-% solveQuadpolyN(a,b,c): returns the larger negative root of quadratic function, uses -inf if none exists
-% solveQuadpolyP(a,b,c): returns the smaller positive root of quadratic function, uses inf if none exists
-% getC1S(p,c0,c2): gets middle F point of interpolation function F and corresponding parameter at control points
-% getc0c2(p,n,t,a): gets F points of interpolation function with curvature parameter a, determined by vertex and symmetry axis direction
-% getNT(c0, c1, c2, s): gets first and second derivative values at control points of interpolation function
-% getab(p,c1,c0,c2, n, t, s): gets parameters of blending function
-% QuadraticBezier(p1, p2, p3): gets quadratic Bezier spline
-% curvature(F, t): gets directed curvature of curve, represented by complex numbers
+% Bezierblend(a,b): returns blending functions with parameters a,b
+% solveQuadpoly(a,b,c): returns the larger positive root of a quadratic opening upward
+% solveQuadpolyN(a,b,c): returns the larger negative root, -inf if none
+% solveQuadpolyP(a,b,c): returns the smaller positive root, inf if none
+% getC1S(p,c0,c2): obtains intermediate F point and corresponding parameter at control point for interpolation function F
+% getc0c2(p,n,t,a): obtains F points of interpolation function determined by curvature parameter a, vertex and symmetry axis direction
+% getNT(c0, c1, c2, s): obtains first and second derivatives at control points of interpolation function
+% getab(p,c1,c0,c2, n, t, s): obtains parameters of blending functions
+% QuadraticBezier(p1, p2, p3): returns quadratic Bezier spline
+% curvature(F, t): returns signed curvature of curve, expressed in complex numbers
 
 function [xx,yy] = Bezierblend(a,b)   
     yy = @(t)(1-t).^4+4*(1-t).^3.*t+3*(1-t).^2.*t.^2;
@@ -299,7 +348,7 @@ end
 
 function [a,b] = getab(p,c1,c0,c2, n, t, s)
 k = length(c1);
-e = 0 * 10^(-10);
+e = 0*10^(-10);
 b0 = real((c1([2:k,1]')-p)./n);    
 b2 = real((c1([k,1:k-1]')-p)./n); 
 d0 = real((c0([2:k,1]')-p)./n);    
@@ -329,6 +378,12 @@ function id = getFlat(p)
 p0 = p([length(p),1:length(p)-1])-p;
 p2 = p([2:length(p),1])-p;
 id = find(abs(real(p0).*real(p2)+imag(p0).*imag(p2))./abs(p0.*p2)>0.99995);
+end
+
+
+function [a, b] = adjustab(a,b,id)
+a(id)=0.5;
+b(id)=0.5;
 end
 
 function F = QuadraticBezier(p1, p2, p3)

@@ -1,8 +1,6 @@
-interactiveG2Curve();
-% load("examples\can.mat");
-% interactiveG2Curve(p{1},a{1});
-function interactiveG2Curve(p,a)
-    % Create figure window and axes
+interactiveG2Curve
+
+function interactiveG2Curve()
     hFig = figure('Name', 'G2_interactive',...
                  'NumberTitle', 'off',...
                  'KeyPressFcn', @keyCallback);
@@ -12,24 +10,13 @@ function interactiveG2Curve(p,a)
     axis(ax, 'off');
     xlim manual;ylim manual;
 
-    % Initialize interactive polygon
     hPoly = drawpolygon(ax, 'Tag', 'G2Polygon',...
                         'FaceAlpha', 0.1,...
                         'EdgeAlpha', 0.5);
     title(ax, {'G2 curve','press W : curvature parameter \times 10 ', 'press R : curvature parameter \times 0.1'});
     
-    % Initialize curvature parameters (stored in polygon object)
     hPoly.UserData.k = ones(size(hPoly.Position,1),1);
-
-    if nargin == 1
-        hPoly.Position = p;
-        hPoly.UserData.k = ones(length(p),1);
-    end
-    if nargin == 2
-        hPoly.Position = p;
-        hPoly.UserData.k = a;
-    end
-    % Plot initial curve
+    
     t = 0:0.01:1;
     q = G2(hPoly.Position, t, hPoly.UserData.k, 'close', 0.83);
     hCurve = plot(ax, real(q), imag(q),...
@@ -37,17 +24,15 @@ function interactiveG2Curve(p,a)
                  'Color', [0 0.5 0],...
                  'Tag', 'G2Curve');
     
-    % Bind polygon update event
     addlistener(hPoly, 'MovingROI', @(src,evt) updateOnDrag(ax, src, hCurve));
 end
 
 function updateOnDrag(ax, poly, curve)
-    % Synchronize parameter dimensions
+
     if numel(poly.UserData.k) ~= size(poly.Position,1)
         poly.UserData.k = ones(size(poly.Position,1),1);
     end
-    
-    % Update curve
+
     t = 0:0.01:1;
     q = G2(poly.Position, t, poly.UserData.k, 'close', 0.83);
     set(curve, 'XData', real(q), 'YData', imag(q));
@@ -55,28 +40,23 @@ function updateOnDrag(ax, poly, curve)
 end
 
 function keyCallback(src, event)
-    % Get key object handles
     hFig = ancestor(src, 'figure');
     ax = findobj(hFig, 'Type', 'axes');
     hPoly = findobj(hFig, 'Tag', 'G2Polygon');
     hCurve = findobj(hFig, 'Tag', 'G2Curve');
     
-    % Validity check
     if isempty(hPoly) || ~isvalid(hPoly) || isempty(hCurve)
         return;
     end
-    
-    % Get mouse position (data coordinate system)
+
     mousePos = get(ax, 'CurrentPoint');
     mousePos = mousePos(1,1:2);
     
-    % Find nearest control point
     [idx, dist] = findNearestPoint(hPoly.Position, mousePos);
     if isempty(idx) || dist > 0.1
         return;
     end
     
-    % Modify curvature parameters
     k = hPoly.UserData.k;
     switch event.Key
         case 'w'
@@ -86,16 +66,13 @@ function keyCallback(src, event)
     end
     hPoly.UserData.k = k;
     
-    % Update curve immediately
     t = 0:0.01:1;
     q = G2(hPoly.Position, t, k, 'close', 0.83);
     set(hCurve, 'XData', real(q), 'YData', imag(q));
     drawnow;
-
 end
 
 function [idx, minDist] = findNearestPoint(points, target)
-    % Nearest point search with threshold
     deltas = points - target;
     distances = sqrt(sum(deltas.^2, 2));
     [minDist, idx] = min(distances);
@@ -107,12 +84,7 @@ end
 function [q,kappa,c,d,n,t,blend] = G2(p, u, alpha, isClose, w, h)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Function for calculating G2-LMC curve
-% p: control points, u: parameter, h: curve handle for callback
-% varargin contains options: 1. closed curve or not 2. curvature parameter of interpolation function
-% p will be converted to complex numbers for calculation
 
-% Initialize curve points q and curvature kappa, used to get F control points c of interpolation function
 kappa = [];
 c = [];
 d = [];
@@ -121,7 +93,6 @@ if numel(p(1,:)) == 2
 end
 q = [];
 
-% Solve for F points and parameters of blending functions
 c0 = p([length(p),1:length(p)-1]');
 c2 = p([2:length(p),1]');
 [c1,s] = getC1S(p,c0,c2);
@@ -143,11 +114,11 @@ c0(id_2) = 1./alpha(id_2).*p(id)+(1-1./alpha(id_2)).*p(id_2);
 a(id) = 0.5;
 b(id) = 0.5;
 blend = [a,b];
-% According to the option value, choose to draw closed or open curve
+
 if strcmp(isClose, 'close')
     for i = 1:length(p)
         F1 = QuadraticBezier(c0(i),c1(i),c2(i));
-        j = mod(i,length(p))+1; % Next point after i
+        j = mod(i,length(p))+1; % next point
         F2 = QuadraticBezier(c0(j),c1(j),c2(j));
         [xx,yy] = Bezierblend(a(i),b(j));
         C = @(t)F1(s(i)+(1-s(i)).*xx(t)).*yy(t) + F2(s(j).*xx(t)).*(1-yy(t));
@@ -168,24 +139,13 @@ elseif strcmp(isClose, 'unclose')
     end
     c=[c0,c1,c2];
 else
-    error('Unknown style option');
+    error('unknown style');
 end
 if(nargin > 5)
     set(h, 'xdata', real(q), 'ydata',imag(q));
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Embedded functions
-% Bezierblend(a,b): gets blending function with parameters a,b
-% solveQuadpoly(a,b,c): returns the larger positive root of upward-opening quadratic function
-% solveQuadpolyN(a,b,c): returns the larger negative root of quadratic function, uses -inf if none exists
-% solveQuadpolyP(a,b,c): returns the smaller positive root of quadratic function, uses inf if none exists
-% getC1S(p,c0,c2): gets middle F point of interpolation function F and corresponding parameter at control points
-% getc0c2(p,n,t,a): gets F points of interpolation function with curvature parameter a, determined by vertex and symmetry axis direction
-% getNT(c0, c1, c2, s): gets first and second derivative values at control points of interpolation function
-% getab(p,c1,c0,c2, n, t, s): gets parameters of blending function
-% QuadraticBezier(p1, p2, p3): gets quadratic Bezier spline
-% curvature(F, t): gets directed curvature of curve, represented by complex numbers
 
 function [xx,yy] = Bezierblend(a,b)   
     yy = @(t)(1-t).^4+4*(1-t).^3.*t+3*(1-t).^2.*t.^2;
@@ -268,7 +228,7 @@ end
 
 function [a,b] = getab(p,c1,c0,c2, n, t, s)
 k = length(c1);
-e = 0 * 10^(-10);
+e = 0*10^(-10);
 b0 = real((c1([2:k,1]')-p)./n);    
 b2 = real((c1([k,1:k-1]')-p)./n); 
 d0 = real((c0([2:k,1]')-p)./n);    
@@ -298,6 +258,12 @@ function id = getFlat(p)
 p0 = p([length(p),1:length(p)-1])-p;
 p2 = p([2:length(p),1])-p;
 id = find(abs(real(p0).*real(p2)+imag(p0).*imag(p2))./abs(p0.*p2)>0.99995);
+end
+
+
+function [a, b] = adjustab(a,b,id)
+a(id)=0.5;
+b(id)=0.5;
 end
 
 function F = QuadraticBezier(p1, p2, p3)
